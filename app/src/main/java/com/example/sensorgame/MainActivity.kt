@@ -161,11 +161,22 @@ fun SensorGameScreen() {
         // 3. Keep the ball on screen
     }
 
-    // every sensor event that earns points calls this function
-    fun addScore(points: Int) {
-        score += points
-        checkWin()
+    fun spawnStars() {
+        stars.clear()
+        val bottomMarginPx = with(density) { 120.dp.toPx() }
+        val safeHeight = (areaHeightPx - bottomMarginPx).coerceAtLeast(starPx * 2)
+        repeat(starCount) {
+            val x = Random.nextFloat() * (areaWidthPx - starPx)
+            val y = Random.nextFloat() * (safeHeight - starPx)
+            stars.add(Offset(x, y))
+        }
     }
+
+//    // every sensor event that earns points calls this function
+//    fun addScore(points: Int) {
+//        score += points
+//        checkWin()
+//    }
 
     // called when Play Again is tapped in the win dialog
     fun restartGame() {
@@ -188,7 +199,11 @@ fun SensorGameScreen() {
         // 3. Ask for the win dialog to be shown
     }
 
-
+    // every sensor event that earns points calls this function
+    fun addScore(points: Int) {
+        score += points
+        checkWin()
+    }
 
 
     fun onShakeDetected() {
@@ -200,16 +215,16 @@ fun SensorGameScreen() {
         addScore(2)
     }
 
-    fun spawnStars() {
-        stars.clear()
-        val bottomMarginPx = with(density) { 120.dp.toPx() }
-        val safeHeight = (areaHeightPx - bottomMarginPx).coerceAtLeast(starPx * 2)
-        repeat(starCount) {
-            val x = Random.nextFloat() * (areaWidthPx - starPx)
-            val y = Random.nextFloat() * (safeHeight - starPx)
-            stars.add(Offset(x, y))
-         }
-    }
+//    fun spawnStars() {
+//        stars.clear()
+//        val bottomMarginPx = with(density) { 120.dp.toPx() }
+//        val safeHeight = (areaHeightPx - bottomMarginPx).coerceAtLeast(starPx * 2)
+//        repeat(starCount) {
+//            val x = Random.nextFloat() * (areaWidthPx - starPx)
+//            val y = Random.nextFloat() * (safeHeight - starPx)
+//            stars.add(Offset(x, y))
+//         }
+//    }
 
     fun checkStarCollisions() {
         if (gameOver) return
