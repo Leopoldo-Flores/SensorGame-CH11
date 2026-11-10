@@ -70,6 +70,8 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.launch
+// class 4
+import androidx.compose.material3.AlertDialog
 
 // Fixed on-screen size of the ball. Not state — it never changes after launch.
 private const val BALL_SIZE_DP = 60
@@ -147,13 +149,47 @@ fun SensorGameScreen() {
     val starCount = 5
     val stars = remember { mutableStateListOf<Offset>() }
 
+    var gameOver by remember { mutableStateOf(false)}
+    var showWinDialog by remember { mutableStateOf(false) }
+    val winScore = 50
+
     fun moveBallWithGyro() {
-        if (!hasGyroscope) return
+        if (!hasGyroscope || gameOver) return
         // Assignment 1
         // 1. Update ballX based on the horizontal gyroscope reading and baseSpeed
         // 2. Update ballY based on the vertical gyroscope reading and baseSpeed
         // 3. Keep the ball on screen
     }
+
+    // every sensor event that earns points calls this function
+    fun addScore(points: Int) {
+        score += points
+        checkWin()
+    }
+
+    // called when Play Again is tapped in the win dialog
+    fun restartGame() {
+        score = 0
+        gameOver = false
+        colorIndex = 0
+        gyroX = 0f
+        gyroY = 0f
+        ballX = (areaWidthPx - ballPx) /2f
+        ballY = (areaHeightPx - ballPx) /2f
+        spawnStars()
+    }
+
+    fun checkWin() {
+        // Guard 1: already won — do nothing (prevents duplicate dialogs)
+        if (gameOver) return
+        // Steps to complete:
+        // 1. Check whether the score has actually reached the target yet
+        // 2. If it has, mark the game as over
+        // 3. Ask for the win dialog to be shown
+    }
+
+
+
 
     fun onShakeDetected() {
         // Assignment 2
@@ -161,6 +197,7 @@ fun SensorGameScreen() {
         // 2. Give the player some feedback that a shake was detected
         colorIndex = (colorIndex + 1) % ballColors.size
         Toast.makeText(context, "Bal color changed!", Toast.LENGTH_SHORT).show()
+        addScore(2)
     }
 
     fun spawnStars() {
@@ -175,6 +212,7 @@ fun SensorGameScreen() {
     }
 
     fun checkStarCollisions() {
+        if (gameOver) return
         val ballRight = ballX + ballPx
         val ballBottom = ballY + ballPx
         val collected = mutableListOf<Offset>()
@@ -186,7 +224,7 @@ fun SensorGameScreen() {
         }
         for (star in collected) {
             stars.remove(star)
-            score += 10
+            addScore(10)
         }
         if (stars.isEmpty()) spawnStars()
     }
@@ -201,6 +239,7 @@ fun SensorGameScreen() {
         // 2. Figure out how far the player has moved since that last fix
         // 3. If they've gone far enough, reward them and update your baseline
         // 4. Handle the very first fix, when there's nothing to compare against yet
+        addScore(5)
     }
 
     val locationCallBack = remember {
@@ -333,6 +372,7 @@ fun SensorGameScreen() {
                     areaHeightPx = coords.size.height.toFloat()
                     ballX = (areaWidthPx - ballPx) / 2f
                     ballY = (areaHeightPx - ballPx) / 2f
+                    score = 0; gameOver = false
                     spawnStars()
                 }
             }
@@ -405,4 +445,26 @@ fun SensorGameScreen() {
             }
         }
     }
+    if (showWinDialog) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("YOU WIN!") },
+            text = { Text("Final Score: $score") },
+            confirmButton = {
+                Button(onClick = { showWinDialog = false; restartGame()}) {
+                    Text("Play Again")
+                }
+
+            }
+        )
+    }
 }
+
+
+
+
+
+
+
+
+
