@@ -55,6 +55,21 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.res.painterResource
 import kotlin.math.sqrt
 import kotlin.random.Random
+// class 3
+import android.Manifest
+import android.content.pm.PackageManager
+import android.location.Location
+import android.os.Looper
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import kotlinx.coroutines.launch
 
 // Fixed on-screen size of the ball. Not state — it never changes after launch.
 private const val BALL_SIZE_DP = 60
@@ -119,6 +134,14 @@ fun SensorGameScreen() {
         )
     }
 
+    // FusedLocationProviderClient - googles recommended location API
+    val fusedLocation = remember { LocationServices.getFusedLocationProviderClient(context) }
+    var lastLocation by remember { mutableStateOf<Location?>(null) }
+    val rewardDistanceM = 10f // meters walked before reward triggers
+    val scope = rememberCoroutineScope()
+    var gpsButtonEnabled by remember { mutableStateOf(true) }
+
+
     // Stars - a list of positions, not a list of View objects
     val starPx = with(density) { 32.dp.toPx() }
     val starCount = 5
@@ -136,6 +159,8 @@ fun SensorGameScreen() {
         // Assignment 2
         // 1. Move to the next color in the list, wrapping back to the start after the last one
         // 2. Give the player some feedback that a shake was detected
+        colorIndex = (colorIndex + 1) % ballColors.size
+        Toast.makeText(context, "Bal color changed!", Toast.LENGTH_SHORT).show()
     }
 
     fun spawnStars() {
@@ -167,6 +192,53 @@ fun SensorGameScreen() {
     }
 
 
+    // called by the OS every time a new GPS fix arrives
+    fun onNewLocation(location: Location) { // display coords. round to 5 decimal - 1m precision
+        gpsText = "Lat: ${"%.5f".format(location.latitude)}" +
+                  "Lon: ${"%.5f".format(location.longitude)}"
+        // ASSIGNMENT 3
+        // 1. If we've seen a location before, compare it against this new one
+        // 2. Figure out how far the player has moved since that last fix
+        // 3. If they've gone far enough, reward them and update your baseline
+        // 4. Handle the very first fix, when there's nothing to compare against yet
+    }
+
+    val locationCallBack = remember {
+        object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                result.lastLocation?.let { onNewLocation(it) }
+            }
+        }
+    }
+
+    fun startLocationUpdates() { // Guard: never call requestLocation without permission
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) return
+
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
+            .setMinUpdateIntervalMillis(1000L)
+            .build()
+        try { // handles the edge case where permission is revoked between the check and call
+            fusedLocation.requestLocationUpdates(request, locationCallBack, Looper.getMainLooper())
+        } catch (e: SecurityException) {
+            gpsText = "Location Unavailable"
+        }
+    }
+
+    // created once - its result callback runs startLocationUpdates() with the users permission
+    val locationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startLocationUpdates() else gpsText = "Location permission denied"
+    }
+
+    // runs once - check permission, either start updates immediately or asks for it
+    LaunchedEffect(Unit) {
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+        if (hasPermission) startLocationUpdates() else locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+
+
     // Registers the gyroscope listener while the screen is visible, unregisters when it
     // isn't. DisposableEffect + LifecycleEventObserver is the Compose equivalent of the
     // onResume() / onPause() / onDestroy() trio in a Views Activity.
@@ -183,17 +255,29 @@ fun SensorGameScreen() {
                         gyroX = event.values[0]
                         gyroY = event.values[1]
                     }
-                    //Sensor.TYPE_ACCELEROMETER -> {
+                    Sensor.TYPE_ACCELEROMETER -> {
+
+
                         // Assignment 2
                         // 1. Read the three acceleration axes from this event
                         // 2. Work out how much force is being applied beyond gravity
                         // 3. If that force is large enough, and the cooldown has passed, react to the shake
-                    val ax = event.values[0]
+                        val ax = event.values[0]
+                        val ay = event.values[1]
+                        val az = event.values[2]
 
-                    // magnitude of total acceleration minus constant gravity
-                    val net = sqrt(ax * ax + ay * ay + az * az) - SensorManager.GRAVITY_EARTH
 
-                    val now =
+                        // magnitude of total acceleration minus constant gravity
+                        val net = sqrt(ax * ax + ay * ay + az * az) - SensorManager.GRAVITY_EARTH
+
+                        val now = System.currentTimeMillis()
+
+                        if (net > shakeThreshold && now - lastShakeTime > shakeCooldownMs) {
+                            lastShakeTime = now
+                            onShakeDetected()
+
+                        }
+                    }
 
 
                 }
@@ -203,17 +287,21 @@ fun SensorGameScreen() {
         }
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME ->
+                Lifecycle.Event.ON_RESUME -> {
                     gyroscope?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) }
-
-                Lifecycle.Event.ON_PAUSE ->
+                    accelerometer?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) }
+                }
+                Lifecycle.Event.ON_PAUSE -> {
                     sensorManager.unregisterListener(listener)
+                    fusedLocation.removeLocationUpdates(locationCallBack)
+                }
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             sensorManager.unregisterListener(listener)
+            fusedLocation.removeLocationUpdates(locationCallBack)
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
@@ -303,7 +391,16 @@ fun SensorGameScreen() {
             Button(onClick = { onShakeDetected() }, enabled = true) {
                 Text("Shake")
             }
-            Button(onClick = { }, enabled = false) {
+            Button(onClick = {
+                gpsButtonEnabled = false
+                            // "Before" position: fixed LA base coordinates
+                val base = Location("test").apply { latitude = 34.0522; longitude = -118.2437 }
+                            // "After" position: 0.0001 degrees north of base = 11 meters
+                val current = Location("test").apply { latitude = 34.0523; longitude = -118.2437 }
+                lastLocation = base
+                onNewLocation(current)  // a coroutine delay replaces Handler.postDelayed
+                scope.launch { delay(5000L); gpsButtonEnabled = true }
+            }, enabled = gpsButtonEnabled) {
                 Text("GPS +10m")
             }
         }
